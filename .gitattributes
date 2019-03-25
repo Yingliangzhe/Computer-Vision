@@ -1,2 +1,2 @@
-.m linguist-language=matlab
-.rb linguist-language=matlab
+*.m linguist-language=matlab
+*.rb linguist-language=matlab

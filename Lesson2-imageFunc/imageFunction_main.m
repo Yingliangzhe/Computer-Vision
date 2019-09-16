@@ -1,7 +1,10 @@
 %inspect image values
-bicycle = imread("D:/Octave/IntroCV/ud810-master/course_images/bicycle.png");
-dolphin = imread("D:/Octave/IntroCV/ud810-master/course_images/dolphin.png");
-saturn = imread("D:/Octave/IntroCV/ud810-master/course_images/saturn.png");
+#bicycle = imread("D:/Octave/IntroCV/ud810-master/course_images/bicycle.png");
+#dolphin = imread("D:/Octave/IntroCV/ud810-master/course_images/dolphin.png");
+#saturn = imread("D:/Octave/IntroCV/ud810-master/course_images/saturn.png");
+pkg load image;
+
+foup_2 = imread("D:/Octave/IntroCV/Lesson2-imageFunc/foup_2.jpg");
 
 
 ##figure(1)
@@ -13,8 +16,10 @@ saturn = imread("D:/Octave/IntroCV/ud810-master/course_images/saturn.png");
 ##%A slice of the image 
 ##img(101:103,201:203);
 ##plot(img(50,:))
-
-%imshow(scale(img,1.5))
+figure(1);
+imshow(scale(foup_2,1.5));
+figure(2);
+imshow(scale(foup_2,1));
 ##result = blend(bicycle,dolphin,0.45);
 ##imshow(result);
 
@@ -29,14 +34,14 @@ saturn = imread("D:/Octave/IntroCV/ud810-master/course_images/saturn.png");
 ##mesh(X1,X2,4-X1-X2)
 ##disp([X;n]);
 ##plot(X,n)
-disp(size(saturn))
-figure(1)
-imshow(saturn)
-
-noise = randn(size(saturn)).*25;
-output = saturn + noise;
-figure(2)
-imshow(output)
+##disp(size(saturn))
+##figure(1)
+##imshow(saturn)
+##
+##noise = randn(size(saturn)).*25;
+##output = saturn + noise;
+##figure(2)
+##imshow(output)
 
 
 

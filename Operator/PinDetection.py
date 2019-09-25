@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage import exposure
 import glob
+from skimage.feature import blob_log
+from math import sqrt
 
 def segmentLoadport(img_gray,window_radius,middle_x,middle_y):
 	y_distance_1 = 700
@@ -171,27 +173,459 @@ def pinTemplateMatching(Pins_patch,pin_templates):
 	return pin_origin_patch,pin_image
 
 
-def exactPinToInitial(pin_image,pin_origin_patch,Pins_patch_origin_initial):
+def exactPinToInitial(pin_image,pin_origin_patch,Pins_patch_origin_initial,y_size,x_size):
 	exact_pin_initial = {}
+	image_empty = np.zeros((y_size, x_size), np.uint8)
 	for pin_name in pin_image:
+		pin_image_gray = cv2.cvtColor(pin_image[pin_name],cv2.COLOR_BGR2GRAY)
 		# store the pin origin into dictionary
 		single_pin_origin_initial = dict(zip([pin_name], [np.array(pin_origin_patch[pin_name]) + np.array(Pins_patch_origin_initial[pin_name])]))
+		exact_pin_y_min = single_pin_origin_initial[pin_name][0]
+		exact_pin_x_min = single_pin_origin_initial[pin_name][1]
+		exact_pin_y_max = exact_pin_y_min + pin_image[pin_name].shape[0]
+		exact_pin_x_max = exact_pin_x_min + pin_image[pin_name].shape[1]
+		image_empty[exact_pin_y_min:exact_pin_y_max,exact_pin_x_min:exact_pin_x_max] = pin_image_gray
 		exact_pin_initial.update(single_pin_origin_initial)
+
+	# this is not only a visulasation of pins in initial image,
+	# but also a reference plot to validate, if the circle center position is right
+	plt.figure('pin in initial image')
+	plt.imshow(image_empty,cmap='gray')
+	plt.title('pin position in initial image')
+	plt.show()
 
 	return exact_pin_initial
 
 
-def mserDetection():
+def mserDetection(pin_image):
+	#pin_image
+	pass
+
+def StarDetection(pin_image):
+	# ----------------------------------
+	# --------- Star Detector ----------
+	# ----------------------------------
+	for pin_name in pin_image:
+		img = pin_image[pin_name]
+		img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		img_hist = cv2.equalizeHist(img_gray,None)
+		img_gamma = exposure.adjust_gamma(img_hist,0.35)
+
+
+
+		star = cv2.xfeatures2d_StarDetector.create()
+		keypoints = star.detect(img_gamma)
+
+		img_keypoint = cv2.drawKeypoints(img, keypoints, None, (255, 0, 0),
+                                         cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
+
+		plt.figure()
+		plt.subplot(121)
+		img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+		plt.imshow(img_rgb)
+		plt.title('Raw Img')
+
+		plt.subplot(122)
+		img_sift_rgb = cv2.cvtColor(img_keypoint, cv2.COLOR_BGR2RGB)
+		plt.imshow(img_sift_rgb)
+		plt.title('Img with Star features')
+
+	pass
+
+def findLargeEllipse(ellipse_major_set):
+	major_index_set = []
+	average_major = np.mean(ellipse_major_set)
+	for counter in range(len(ellipse_major_set)):
+		major = ellipse_major_set[counter]
+		if major > average_major:
+			major_index = counter
+			major_index_set.append(major_index)
+
+	return major_index_set
+
+def ellipsePointSet(hull_set):
+	#large_ellipse_hull_set = []
+	#for counter in ellipse_index:
+		#large_ellipse_hull = hull_set[ellipse_index[counter]]
+		#large_ellipse_hull_set.append(large_ellipse_hull)
+
+
+	#large_ellipse_hull_set = np.concatenate((large_ellipse_hull_set[counter - 1],large_ellipse_hull),axis=0)
+
+	ellipse_point_set = np.array([])
+	for ellipse_hull_index in range(len(hull_set)):
+		if ellipse_hull_index == 0:
+			ellipse_point_set = hull_set[ellipse_hull_index]
+		else:
+			ellipse_point_set = np.concatenate((ellipse_point_set,hull_set[ellipse_hull_index]),axis=0)
+
+	'''
+	for ellipse_hull_index in range(len(ellipse_hull_set)):
+		if ellipse_hull_index == 0:
+			ellipse_point_set = large_ellipse_hull_set[ellipse_hull_index]
+		else:
+			ellipse_point_set = np.concatenate((ellipse_point_set,large_ellipse_hull_set[ellipse_hull_index]),axis=0)
+	'''
+
+	#np.array(large_ellipse_hull_set).reshape(-1,1,2)
+
+	return ellipse_point_set
+
+def MSERBlobDetection(pin_image):
+	mser = cv2.MSER.create(_min_area=400)
+
+	ellipse_center_point_dic = {}
+	for pin_name in pin_image:
+		img = pin_image[pin_name]
+		img_copy = img.copy()
+		img_gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+		#img_hist = cv2.equalizeHist(img_gray, None)
+		img_gamma = exposure.adjust_gamma(img_gray, 0.35)
+
+		regions,bboxes = mser.detectRegions(img_gamma)
+		#ellipse_set = []
+		#ellipse_major_set = []
+		hull_set = []
+		'''
+		for p in regions:
+			hull = cv2.convexHull(p.reshape(-1,1,2))
+			cv2.polylines(img,hull,1,(0,255,0))
+
+			ellipse = cv2.fitEllipse(hull)
+			cv2.ellipse(img,ellipse,(0,255,0),1)
+
+			ellipse_set.append(ellipse)
+			ellipse_major = ellipse[1][1]
+			ellipse_major_set.append(ellipse_major)
+			hull_set.append(hull)
+
+			cv2.imshow('img',img)
+			cv2.waitKey(1)
+		'''
+		for box_counter in range(len(bboxes)):
+			if bboxes[box_counter][3] > 100:
+				hull = cv2.convexHull(regions[box_counter].reshape(-1,1,2))
+				hull_set.append(hull)
+
+
+		#ellipse_index = findLargeEllipse(ellipse_major_set)
+
+		ellipse_point_set = ellipsePointSet(hull_set)
+
+		ellipse = cv2.fitEllipse(ellipse_point_set)
+
+		cv2.ellipse(img_copy,ellipse,(255,0,0),1)
+
+		# ellipse_center_point store the center point of ellipse in format (y,x)
+		ellipse_center_point = (ellipse[0][1],ellipse[0][0])
+		single_ellipse_center_point = dict(zip([pin_name],[ellipse_center_point]))
+		ellipse_center_point_dic.update(single_ellipse_center_point)
+
+		cv2.imshow('img_copy',img_copy)
+		cv2.waitKey(1)
+
+		#hulls = [cv2.convexHull(p.reshape(-1, 1, 2)) for p in regions]
+		#cv2.polylines(img,hulls,1,(0,255,0))
+		img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+		img_copy = cv2.cvtColor(img_copy,cv2.COLOR_BGR2RGB)
+
+		plt.figure()
+		plt.subplot(121)
+		plt.imshow(img)
+
+		plt.subplot(122)
+		plt.imshow(img_copy)
+		plt.show()
+
+	return ellipse_center_point_dic
+
+def pinCenterToInitial(exact_pin_initial,ellipse_center_point):
+	pin_center_point_in_initial = {}
+	for pin_name in ellipse_center_point:
+		single_circle_center_point = dict(zip([pin_name], [np.array(exact_pin_initial[pin_name])
+		                                                   + np.array(ellipse_center_point[pin_name])]))
+		pin_center_point_in_initial.update(single_circle_center_point)
+
+	return pin_center_point_in_initial
+
+
+
+def SimpleBlobDetection(pin_image):
+
+	params = cv2.SimpleBlobDetector_Params()
+
+	params.minThreshold = 10
+	params.maxThreshold = 250
+	params.thresholdStep = 2
+
+	params.minRepeatability = 1
+	params.minDistBetweenBlobs = 2
+
+	#params.filterByArea = True
+	#params.minArea = 1000
+
+	#params.filterByCircularity = True
+	#params.minCircularity = 0.7
+	#params.maxConvexity = 1
+
+	sbd = cv2.SimpleBlobDetector.create(params)
+
+	for pin_name in pin_image:
+		img = pin_image[pin_name]
+		img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		#img_hist = cv2.equalizeHist(img_gray, None)
+		img_gamma = exposure.adjust_gamma(img_gray, 0.5)
+
+		keypoints = sbd.detect(img_gamma)
+
+		img_keypoints = cv2.drawKeypoints(img,keypoints,np.array([]), (0,0,255),
+		                                  cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
+		img_keypoints = cv2.cvtColor(img_keypoints,cv2.COLOR_BGR2RGB)
+
+		plt.figure()
+		plt.imshow(img_keypoints)
+		plt.show()
+
+
+
+def LOG(pin_image,gaussian_sigma,laplacian_size):
+
+	for pin_name in pin_image:
+
+		img = pin_image[pin_name]
+		img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		img_hist = cv2.equalizeHist(img_gray, None)
+		img_gamma = exposure.adjust_gamma(img_hist, 0.35)
+
+		img_gaussian = cv2.GaussianBlur(img_gamma, (gaussian_sigma, gaussian_sigma), 0)
+
+		img_log = cv2.Laplacian(img_gaussian,cv2.CV_64F,ksize=laplacian_size)
+
+
+		plt.figure(pin_name)
+		plt.subplot(121)
+		plt.imshow(img_gray,cmap='gray')
+		plt.title('original img')
+
+		plt.subplot(122)
+		plt.imshow(img_log,cmap='gray')
+		plt.title('laplacian of gaussian')
+
+		plt.show()
+
+
+def LOGBlobDetection(pin_image):
+	for pin_name in pin_image:
+		img = pin_image[pin_name]
+		img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		img_hist = cv2.equalizeHist(img_gray, None)
+		img_gamma = exposure.adjust_gamma(img_hist, 0.35)
+
+		blobs_log = blob_log(img_gamma, min_sigma=20, max_sigma=100, num_sigma=10, threshold=.2,overlap=.5)
+		blobs_log[:, 2] = blobs_log[:, 2] * sqrt(2)
+
+		for blob in blobs_log:
+			y, x, r = blob
+			cv2.circle(img,(int(y),int(x)),int(r),(255,0,0),1)
+
+		plt.figure()
+		plt.subplot(121)
+		plt.imshow(img_gamma,cmap='gray')
+
+		plt.subplot(122)
+		img_gray = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+		plt.imshow(img_gray,cmap='gray')
+
+		plt.show()
 	pass
 
 
+def Threshold(pin_image):
+	edges = {}
+	for pin_name in pin_image:
+		img = pin_image[pin_name]
+		img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+		img_hist = cv2.equalizeHist(img_gray,None)
+		img_gamma = exposure.adjust_gamma(img_hist,0.35)
 
-img = cv2.imread('D:/Diplomarbeit/Bildsatz/TestGF_1/TestGF_anJialiang/Bilder_GF/LOADPORT/affine/5.png')
+		dst_mean = cv2.adaptiveThreshold(img_gamma,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,11,2)
+		dst_gaussian = cv2.adaptiveThreshold(img_gamma,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,2)
+
+		img_bilateral = cv2.bilateralFilter(img_gamma,7,75,75)
+		_,dst_bin = cv2.threshold(img_bilateral,120,255,cv2.THRESH_BINARY)
+
+		canny_edge = cv2.Canny(dst_bin,0,0)
+
+		plt.figure()
+
+		plt.subplot(231)
+		plt.imshow(img_gray,'gray')
+		plt.title('original img')
+
+		plt.subplot(232)
+		#img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+		plt.imshow(img_gamma,cmap='gray')
+		plt.title('Gamma correction')
+
+		plt.subplot(233)
+		#img_sift_rgb = cv2.cvtColor(dst_mean, cv2.COLOR_BGR2RGB)
+		plt.imshow(dst_mean,cmap='gray')
+		plt.title('mean methode')
+
+		plt.subplot(234)
+		plt.imshow(dst_gaussian,cmap='gray')
+		plt.title('gaussian methode')
+
+		plt.subplot(235)
+		plt.imshow(dst_bin,cmap='gray')
+		plt.title('binary')
+
+		plt.subplot(236)
+		plt.imshow(canny_edge,cmap='gray')
+		plt.title('canny edge')
+
+
+		plt.show()
+
+		single_edge = dict(zip([pin_name],[canny_edge]))
+		edges.update(single_edge)
+
+	return edges
+
+def houghCircle(edges,pin_image):
+	circle_center = {}
+	for img_name in edges:
+		img = edges[img_name]
+		pin_img = pin_image[img_name]
+		circles1 = cv2.HoughCircles(img, cv2.HOUGH_GRADIENT, 1, 10,
+		                           param1=30, param2=15, minRadius=50, maxRadius=70)
+		circles = circles1[0, :, :]
+		m = 0
+		img = cv2.cvtColor(img,cv2.COLOR_GRAY2RGB)
+		#circles = np.uint16(np.around(circles))
+		for i in circles:
+
+			# draw the outer circle
+			cv2.circle(img, (i[0], i[1]), i[2], (0, 0, 255), 3)
+			# draw the center of the circle
+			cv2.circle(img, (i[0], i[1]), 2, (255, 0, 0), 6)
+
+			if m == 0:
+				break
+			'''
+			cv2.namedWindow('circle', 0)
+			cv2.imshow('circle', pin_img)
+			cv2.waitKey(1)
+			'''
+
+		plt.figure()
+		plt.imshow(img)
+		plt.show()
+		single_circle = dict(zip([img_name],[circles[0][0:2][::-1]])) # this operation we change the coordinate into (y,x)
+		circle_center.update(single_circle)
+
+	return circle_center
+
+
+
+
+def circleCenterPointInInitial(circle_center,exact_pin_initial):
+	circle_center_point_in_initial = {}
+	for pin_name in circle_center:
+		single_circle_center_point = dict(zip([pin_name],[np.array(exact_pin_initial[pin_name])
+		                                                   + np.array(circle_center[pin_name])]))
+		circle_center_point_in_initial.update(single_circle_center_point)
+
+	return circle_center_point_in_initial
+
+
+def findSideMiddlePoint(pin_center_point_in_initial):
+
+	left_middle_point = ((pin_center_point_in_initial['BM_pin'][0] - pin_center_point_in_initial['TL_pin'][0])/2,
+	                    (pin_center_point_in_initial['BM_pin'][1] - pin_center_point_in_initial['TL_pin'][1])/2)
+
+	right_middle_point = ((pin_center_point_in_initial['BM_pin'][0] - pin_center_point_in_initial['TR_pin'][0])/2,
+	                      (pin_center_point_in_initial['TR_pin'][1] - pin_center_point_in_initial['BM_pin'][1])/2)
+
+	return left_middle_point,right_middle_point
+
+def middlePoint(p2,p4,pin_center_point_in_initial):
+
+	for pin_name in pin_center_point_in_initial:
+		if pin_name == 'TR_pin':
+			p1 = pin_center_point_in_initial[pin_name]
+
+		elif pin_name == 'TL_pin':
+			p3 = pin_center_point_in_initial[pin_name]
+
+
+
+
+	tolerance = 10 ** (-6)
+
+	x1 = p1[1]
+	x2 = p2[1]
+	x3 = p3[1]
+	x4 = p4[1]
+
+	y1 = p1[0]
+	y2 = p2[0]
+	y3 = p3[0]
+	y4 = p4[0]
+
+	a = x2 - x1
+	b = x3 - x4
+	c = y2 - y1
+	d = y3 - y4
+	g = x3 - x1
+	h = y3 - y1
+
+	f = a * d - b * c
+
+	if abs(f) < tolerance:
+		print('inverse matrix cannot be computed')
+		if f > 0:
+			f = tolerance
+		else:
+			f = -tolerance
+
+	t = (d * g - b * h) / f
+	s = (a * h - c * g) / f
+
+	if t < 0 or t > 1:
+		print('two lines do not intersect')
+
+	if s < 0 or t > 1:
+		print('two lines do not intersect')
+
+	print('x1 = ', x1, 'y1 = ', y1)
+	print('x2 = ', x2, 'y2 = ', y2)
+	print('x3 = ', x3, 'y3 = ', y3)
+	print('x4 = ', x4, 'y4 = ', y4)
+
+	print('t = ', t, 's = ', s)
+
+	intersection_point = (y1 + t * (y2 - y1), x1 + t * (x2 - x1))
+
+	print('intersection point is ', intersection_point)
+
+	pin_center_point_in_initial.update({'MM': np.array(intersection_point)})
+
+	return pin_center_point_in_initial
+
+
+
+
+img = cv2.imread('D:/Diplomarbeit/Bildsatz/TestGF_1/TestGF_anJialiang/Bilder_GF/LOADPORT/translation/4.png')
 img_gamma = exposure.adjust_gamma(img,0.35)
 img_gray = cv2.cvtColor(img_gamma,cv2.COLOR_BGR2GRAY)
 
 img_edge = cv2.Canny(cv2.bilateralFilter(img_gray,5,75,75),20,50)
 
+y_size = img.shape[0]
+x_size = img.shape[1]
 
 
 center_template = cv2.imread('Loadport_template/center.png')
@@ -209,22 +643,75 @@ center_img = img_gray[center_y_min:center_y_max,center_x_min:center_x_max]
 plt.figure()
 plt.imshow(center_img,cmap='gray')
 plt.show()
+'''
+center_img_canny = cv2.Canny(cv2.bilateralFilter(img_gray,5,75,75),20,50)
+contours, hierarchy = cv2.findContours(center_img_canny, cv2.RETR_TREE)
+cv2.drawContours(center_img_canny, contours, -1, (0,0,255), 3)
 
-Pins_patch,Pins_patch_origin_initial = segmentLoadport(img_gray,window_radius,middle_x,middle_y)
+cv2.cvtColor(center_img_canny,cv2.COLOR_BGR2RGB)
+plt.figure()
+plt.imshow(center_img_canny)
+plt.show()
+'''
+Pins_patch,Pins_patch_origin_initial = segmentLoadport(img,window_radius,middle_x,middle_y)
 
 file_name_set = './Loadport_template/' + '*.png'
 pin_templates = loadPinTemplate(file_name_set)
 
 pin_origin_patch,pin_image = pinTemplateMatching(Pins_patch,pin_templates)
 
+exact_pin_initial = exactPinToInitial(pin_image,pin_origin_patch,Pins_patch_origin_initial,y_size,x_size)
 #detection_methode = input()
 
-#if detection_methode == 'MSER':
-	#mserDetection()
+
+# ----------------------------------
+# --------- Star Detector ----------
+# ----------------------------------
+#StarDetection(pin_image)
+
+
+# ----------------------------------
+# --------- MSER Detector ----------
+# ----------------------------------
+
+ellipse_center_point_dic = MSERBlobDetection(pin_image)
+pin_center_point_in_initial = pinCenterToInitial(exact_pin_initial,ellipse_center_point_dic)
+
+left_middle_point, right_middle_point = findSideMiddlePoint(pin_center_point_in_initial)
+
+pin_center_point_in_initial = middlePoint(right_middle_point,left_middle_point,pin_center_point_in_initial)
+
+# ----------------------------------
+# --------- segmentation -----------
+# ----------------------------------
 
 
 
+# ----------------------------------
+# ------ simple blob detection -----
+# ----------------------------------
+#SimpleBlobDetection(pin_image)
 
 
+# ----------------------------------
+# ------- adaptive Threshold -------
+# ----------------------------------
+#edges = Threshold(pin_image)
 
+
+# ----------------------------------
+# ------ Laplacian of Gaussian -----
+# ----------------------------------
+
+#LOGBlobDetection(pin_image)
+
+
+# ----------------------------------------------------
+# ------ hough circle after canny edge operation -----
+# ----------------------------------------------------
+#circle_center = houghCircle(edges,pin_image)
+
+#exact_pin_initial = exactPinToInitial(pin_image,pin_origin_patch,Pins_patch_origin_initial,y_size,x_size)
+
+#pin_center_point = circleCenterPointInInitial(circle_center,exact_pin_initial)
 pass

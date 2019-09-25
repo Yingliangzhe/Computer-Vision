@@ -252,14 +252,25 @@ def PatchOriginToInitial(Patchs_oringinal,Patch_pos,y_size,x_size):
 		#print(Patchs_oringinal[patch_name].shape)
 		#img_empty[patch_y_min:patch_y_max, patch_x_min:patch_x_max] = Patchs_oringinal[patch_name]
 
-def clampOriginToInitial(clamp_image,clamp_origin_patch,patch_origin):
+def clampOriginToInitial(clamp_image,clamp_origin_patch,patch_origin,y_size,x_size):
 	# back transformation from clamp origin to original image coordinate
 	# dict stores a tuple of all position
 	clamp_origin_initial = {}
+	image_empty = np.zeros((y_size, x_size), np.uint8)
 	for clamp_name in clamp_image:
 		# use np.array to change tuple into ndarray, and use tuple back into tuple
 		single_clamp_origin_initial = dict(zip([clamp_name], [tuple(np.array(clamp_origin_patch[clamp_name]) + np.array(patch_origin[clamp_name]))]))
+		clamp_y_min = single_clamp_origin_initial[clamp_name][0]
+		clamp_x_min = single_clamp_origin_initial[clamp_name][1]
+		clamp_y_max = clamp_y_min + clamp_image[clamp_name].shape[0]
+		clamp_x_max = clamp_x_min + clamp_image[clamp_name].shape[1]
+		image_empty[clamp_y_min:clamp_y_max, clamp_x_min:clamp_x_max] = clamp_image[clamp_name]
 		clamp_origin_initial.update(single_clamp_origin_initial)
+
+	plt.figure('clamp in original image')
+	plt.imshow(image_empty, cmap='gray')
+	plt.title('grip notch in original image origin')
+	plt.show()
 
 	return clamp_origin_initial
 
@@ -272,7 +283,7 @@ def findCrossLine(negative_lines,positive_lines,template_name):
 		distance_to_ref_posi = min(distance_plus)
 	elif template_name == 'LM':
 		distance_to_ref_nega = min(distance_minus)
-		distance_to_ref_posi = max(distance_plus)
+		distance_to_ref_posi = min(distance_plus)
 	elif template_name == 'RM':
 		distance_to_ref_nega = max(distance_minus)
 		distance_to_ref_posi = max(distance_plus)
@@ -308,6 +319,126 @@ def findCrossLine(negative_lines,positive_lines,template_name):
 	cross_line = [nega[0],posi[0]]
 
 	return cross_line
+
+def findLine(cross_line_dict):
+	intersection_point = {}
+
+	for line_name in cross_line_dict:
+		line_1 = cross_line_dict[line_name][0]
+		line_2 = cross_line_dict[line_name][1]
+
+		# y = a1x + b1
+		x_1 = line_1[0][0]
+		y_1 = line_1[0][1]
+		x_2 = line_1[0][2]
+		y_2 = line_1[0][3]
+
+		# y = a2x + b2
+		x_3 = line_2[0][0]
+		y_3 = line_2[0][1]
+		x_4 = line_2[0][2]
+		y_4 = line_2[0][3]
+
+		a_1 = abs((y_1 - y_2) / (x_1 - x_2))
+		b_1 = y_1 - a_1 * x_1
+
+		a_2 = -abs((y_3 - y_4) / (x_3 - x_4))
+		b_2 = y_3 - a_2 * x_3
+
+		p = findIntersection(a_1,b_1,a_2,b_2)
+		single_point = dict(zip([line_name], [p]))
+		intersection_point.update(single_point)
+
+	return intersection_point
+
+def findIntersection(a_1,b_1,a_2,b_2):
+	# this method is not a very robust solution,
+	# if the slope is infinity, this method will be failed
+	intersec_x = -(b_2 - b_1)/(a_2 - a_1)
+	intersec_y = a_1 * intersec_x + b_1
+
+	return (intersec_y,intersec_x)
+
+
+def intersectionInInitial(clamp_origin_initial,intersection_point):
+	# this block is used to
+	intersection_point_in_initial = {}
+	for clamp_name in intersection_point:
+		single_intersection_point = dict(zip([clamp_name],[np.array(clamp_origin_initial[clamp_name])
+		                                                   + np.array(intersection_point[clamp_name])]))
+		intersection_point_in_initial.update(single_intersection_point)
+
+	return intersection_point_in_initial
+
+def middlePoint(intersection_point_in_initial):
+
+	for notch_name in intersection_point_in_initial:
+		if notch_name == 'TM':
+			p1 = intersection_point_in_initial[notch_name]
+		elif notch_name == 'BM':
+			p2 = intersection_point_in_initial[notch_name]
+		elif notch_name == 'LM':
+			p3 = intersection_point_in_initial[notch_name]
+		else:
+			p4 = intersection_point_in_initial[notch_name]
+
+	if ((p1 is not None) and (p2 is not None) and (p3 is not None) and (p4 is not None)) == True:
+		print('load Point is correct')
+
+		tolerance = 10 ** (-6)
+
+		x1 = p1[1]
+		x2 = p2[1]
+		x3 = p3[1]
+		x4 = p4[1]
+
+		y1 = p1[0]
+		y2 = p2[0]
+		y3 = p3[0]
+		y4 = p4[0]
+
+		a = x2 - x1
+		b = x3 - x4
+		c = y2 - y1
+		d = y3 - y4
+		g = x3 - x1
+		h = y3 - y1
+
+		f = a * d - b * c
+
+		if abs(f) < tolerance:
+			print('inverse matrix cannot be computed')
+			if f > 0:
+				f = tolerance
+			else:
+				f = -tolerance
+
+		t = (d * g - b * h) / f
+		s = (a * h - c * g) / f
+
+		if t < 0 or t > 1:
+			print('two lines do not intersect')
+
+		if s < 0 or t > 1:
+			print('two lines do not intersect')
+
+		print('x1 = ', x1, 'y1 = ', y1)
+		print('x2 = ', x2, 'y2 = ', y2)
+		print('x3 = ', x3, 'y3 = ', y3)
+		print('x4 = ', x4, 'y4 = ', y4)
+
+		print('t = ', t, 's = ', s)
+
+		intersection_point = (y1 + t * (y2 - y1), x1 + t * (x2 - x1))
+
+		print('intersection point is ', intersection_point)
+
+		intersection_point_in_initial.update({'MM': np.array(intersection_point)})
+
+		return intersection_point_in_initial
+	else:
+		print('middle point cannot be calculated')
+
 
 
 '''
@@ -411,14 +542,19 @@ clamp_origin_patch_1, clamp_image_1 = NotchTemplateMatching(Patchs_oringinal_1,t
 patch_origin_0 = PatchOriginToInitial(Patchs_oringinal_0,Patch_pos_0,y_size,x_size)
 patch_origin_1 = PatchOriginToInitial(Patchs_oringinal_1,Patch_pos_1,y_size,x_size)
 
-clamp_origin_initial_0 = clampOriginToInitial(clamp_image_0,clamp_origin_patch_0,patch_origin_0)
-clamp_origin_initial_1 = clampOriginToInitial(clamp_image_1,clamp_origin_patch_1,patch_origin_1)
+clamp_origin_initial_0 = clampOriginToInitial(clamp_image_0,clamp_origin_patch_0,patch_origin_0,y_size,x_size)
+clamp_origin_initial_1 = clampOriginToInitial(clamp_image_1,clamp_origin_patch_1,patch_origin_1,y_size,x_size)
 
 
 
 # every edge image can be stored in this folder
 #for patch in Patchs_edge:
 #	cv2.imwrite(str(patch)+'.bmp', Patchs_edge[patch])
+
+# ----------------------------------------------------
+# ---------------- LSD line detector -----------------
+# ----------------------------------------------------
+
 
 y_size = clamp_image_0['TM'].shape[0]
 x_size = y_size
@@ -518,7 +654,11 @@ for template_name in clamp_image_0:
 
 
 	img_empty_none = np.zeros((y_size, x_size), np.uint8)
-	drawn_on_empty_none = lsd_detector.drawSegments(img_empty_none,cross_line)
+	if template_name == 'TM' or template_name == 'LM' or template_name == 'RM' or template_name == 'BM':
+		drawn_on_empty_none = lsd_detector.drawSegments(img_empty_none, cross_line)
+	else:
+		drawn_on_empty_none = lsd_detector.drawSegments(img_empty_none, temp_line)
+
 	edge_image_none = drawn_on_empty_none.copy()
 	edge_image_none = cv2.cvtColor(edge_image_none,cv2.COLOR_BGR2GRAY)
 
@@ -576,9 +716,10 @@ for template_name in clamp_image_0:
 
 plt.show()
 
+intersection_point = findLine(cross_line_dict)
 
+intersection_point_in_initial = intersectionInInitial(clamp_origin_initial_0,intersection_point)
+
+intersection_point_in_initial = middlePoint(intersection_point_in_initial)
 pass
-
-
-
 
